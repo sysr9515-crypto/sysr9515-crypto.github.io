@@ -184,6 +184,12 @@
       }
       .prog { color: var(--accent); font-size: 0.76rem; font-weight: 700; margin-left: 6px; }
 
+      /* ---------- タイムスライサー ---------- */
+      .slicer { margin: 14px 2px 0; touch-action: pan-y; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; cursor: ew-resize; }
+      .slicer svg { display: block; width: 100%; height: auto; }
+      .slicer-label { font-size: 0.85rem; color: var(--ink-2); margin: 8px 2px 0; font-variant-numeric: tabular-nums; }
+      .slicer-label strong { color: var(--ink); }
+
       /* ---------- 投稿 ---------- */
       .posts { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 10px; }
       @media (min-width: 720px) { .posts { grid-template-columns: 1fr 1fr; } }
@@ -242,9 +248,14 @@
         </div>
       </div>
 
-      <section>
+      <section id="followerSection">
         <div class="sec-head"><h2>フォロワー数の推移</h2><span class="rule"></span></div>
         <p class="note">2026年11月（日別）。11月1日の3,734人から、23日で+71人増えました。</p>
+        <p class="note" id="followerNoteMonthly" hidden>月別では、月末時点のフォロワー数と、その1か月に増えた人数を表示します。記録は2026年11月分からです。</p>
+        <div class="toggle" role="group" aria-label="フォロワーの表示単位">
+          <button type="button" id="btnFolDaily" aria-pressed="true">日別</button>
+          <button type="button" id="btnFolMonthly" aria-pressed="false">月別</button>
+        </div>
         <div class="chart-box">
           <div class="chart-readout" id="followerReadout" aria-live="polite"></div>
           <div class="chart-inner" id="followerWrap"><div id="followerChart"></div><div class="chart-tip" id="followerTip"></div></div>
@@ -253,16 +264,34 @@
       </section>
 
       <section>
-        <div class="sec-head"><h2>日別のいいね数</h2><span class="rule"></span></div>
-        <p class="note">その日に投稿された写真・動画についたいいねの合計です。</p>
-        <div class="toggle" role="group" aria-label="表示期間">
-          <button type="button" id="btnLikes3m" aria-pressed="true">過去3か月</button>
-          <button type="button" id="btnLikes1y" aria-pressed="false">過去1年</button>
+        <div class="sec-head"><h2>曜日別のフォロワー増加</h2><span class="rule"></span></div>
+        <p class="note">フォロワーの増えた数を、その日の曜日に振り分けて合計したものです。記録は2026年11月からで、まだ各曜日とも数日分しかないため目安です。</p>
+        <div class="chart-box">
+          <div class="chart-readout" id="weekdayReadout" aria-live="polite"></div>
+          <div class="chart-inner" id="weekdayWrap"><div id="weekdayChart"></div><div class="chart-tip" id="weekdayTip"></div></div>
+          <p class="hint">棒を押したまま横にスワイプすると、触れている曜日の数字が上のパネルに出ます。</p>
+        </div>
+      </section>
+
+      <section>
+        <div class="sec-head"><h2>いいね数の集計</h2><span class="rule"></span></div>
+        <p class="note">その日に投稿された写真・動画についたいいねの合計です。下のタイムスライサーで期間を絞って、日別・月別に集計できます。</p>
+        <div class="toggle" role="group" aria-label="集計の単位">
+          <button type="button" id="btnGranDay" aria-pressed="true">日別</button>
+          <button type="button" id="btnGranMonth" aria-pressed="false">月別</button>
         </div>
         <div class="chart-box">
           <div class="chart-readout" id="likesReadout" aria-live="polite"></div>
           <div class="chart-inner" id="likesWrap"><div id="likesChart"></div><div class="chart-tip" id="likesTip"></div></div>
           <p class="hint">棒を押したまま横にスワイプすると、触れている位置の数字が上のパネルに出ます。選んだ棒だけ濃く、他は薄く表示されます。</p>
+          <div class="slicer" id="slicerWrap"><div id="slicerChart"></div></div>
+          <p class="slicer-label" id="sliceLabel"></p>
+          <div class="toggle" role="group" aria-label="期間のプリセット" style="margin:10px 0 4px">
+            <button type="button" id="btnSlice3m" aria-pressed="true">過去3か月</button>
+            <button type="button" id="btnSlice6m" aria-pressed="false">過去6か月</button>
+            <button type="button" id="btnSliceAll" aria-pressed="false">全期間（1年）</button>
+          </div>
+          <p class="hint">上の帯がタイムスライサーです。両端のつまみを引っ張ると期間の始まりと終わりが変わり、真ん中を引っ張ると期間ごと前後にずらせます。</p>
         </div>
       </section>
 
@@ -378,7 +407,7 @@
       }
       /* スクラブ操作：押したまま横にスワイプすると、指の位置に一番近いデータへ連動して切り替わる。
          縦方向はページスクロールに譲る（CSSの touch-action: pan-y と併用）。 */
-      var fScrub = null, lScrub = null, mScrub = null;
+      var fScrub = null, lScrub = null, mScrub = null, wScrub = null;
       function attachScrub(wrap, getCfg, onPick) {
         var dragging = false, last = -1;
         function pick(e) {
@@ -406,19 +435,42 @@
         wrap.addEventListener("pointercancel", end);
       }
 
-      /* ---------- フォロワー推移（折れ線） ---------- */
+      /* ---------- フォロワー推移（折れ線・日別／月別切り替え） ---------- */
       var FW = 720, FH = 250, FL = 52, FR = 14, FT = 16, FB = 30;
-      var fGeom = [];
+      var fGeom = [], fMode = "daily", fRows = [];
+      function followerRows() {
+        if (fMode === "daily") {
+          return DATA.daily.map(function (r) {
+            return { key: r[0], label: jpDate(r[0]), axis: r[0].slice(5).replace("-", "/"),
+                     value: r[1], delta: r[2], posts: r[3], monthly: false };
+          });
+        }
+        var byMonth = {}, order = [];
+        DATA.daily.forEach(function (r) {
+          var m = r[0].slice(0, 7);
+          if (!byMonth[m]) { byMonth[m] = { end: r[1], sum: 0, days: 0 }; order.push(m); }
+          byMonth[m].end = r[1];
+          byMonth[m].sum += r[2] || 0;
+          byMonth[m].days += 1;
+        });
+        var lastMonth = DATA.daily[DATA.daily.length - 1][0].slice(0, 7);
+        return order.map(function (m) {
+          var b = byMonth[m];
+          return { key: m, label: jpMonth(m), axis: m.slice(2).replace("-", "/"),
+                   value: b.end, delta: b.sum, days: b.days, monthly: true, current: m === lastMonth };
+        });
+      }
       function followerChart() {
-        var rows = DATA.daily; // [date, followers, fDelta, posts, pDelta, totalLikes, likeDelta, following]
+        fRows = followerRows();
+        var rows = fRows;
         var iw = FW - FL - FR, ih = FH - FT - FB;
-        var vals = rows.map(function (r) { return r[1]; });
+        var vals = rows.map(function (r) { return r.value; });
         var min = Math.min.apply(null, vals), max = Math.max.apply(null, vals);
         var pad = Math.max(4, (max - min) * 0.18);
         min = Math.floor(min - pad); max = Math.ceil(max + pad);
-        function x(i) { return FL + (iw * i) / (rows.length - 1); }
+        function x(i) { return rows.length === 1 ? FL + iw / 2 : FL + (iw * i) / (rows.length - 1); }
         function y(val) { return FT + ih - ((val - min) / (max - min)) * ih; }
-        fGeom = rows.map(function (r, i) { return [x(i), y(r[1])]; });
+        fGeom = rows.map(function (r, i) { return [x(i), y(r.value)]; });
         var s = '<svg viewBox="0 0 ' + FW + " " + FH + '" role="img" aria-label="フォロワー数の推移グラフ">';
         for (var g = 0; g <= 4; g++) {
           var gv = min + ((max - min) * g) / 4, gy = y(gv);
@@ -426,25 +478,32 @@
           s += '<text x="' + (FL - 7) + '" y="' + (gy + 4) + '" text-anchor="end" font-size="11" fill="' + v("--ink-2") + '">' + Math.round(gv).toLocaleString("ja-JP") + "</text>";
         }
         s += '<line id="fGuide" x1="0" y1="' + FT + '" x2="0" y2="' + (FT + ih) + '" stroke="' + v("--accent") + '" stroke-width="2" opacity="0.9"/>';
-        s += '<path d="' + smoothPath(fGeom) + '" fill="none" stroke="' + v("--accent") + '" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>';
+        if (rows.length > 1) {
+          s += '<path d="' + smoothPath(fGeom) + '" fill="none" stroke="' + v("--accent") + '" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>';
+        }
         rows.forEach(function (r, i) {
           s += '<circle cx="' + fGeom[i][0] + '" cy="' + fGeom[i][1] + '" r="3.2" fill="' + v("--surface") + '" stroke="' + v("--accent") + '" stroke-width="2"/>';
-          var day = parseInt(r[0].slice(8), 10);
-          if (day === 1 || day === 5 || day === 10 || day === 15 || day === 20) {
-            s += '<text class="fxlab" data-idx="' + i + '" x="' + fGeom[i][0] + '" y="' + (FH - 8) + '" text-anchor="middle" font-size="11" fill="' + v("--ink-2") + '">11/' + day + "</text>";
+          var day = parseInt(r.key.slice(8), 10);
+          if (r.monthly || day === 1 || day === 5 || day === 10 || day === 15 || day === 20) {
+            s += '<text class="fxlab" data-idx="' + i + '" x="' + fGeom[i][0] + '" y="' + (FH - 8) + '" text-anchor="middle" font-size="11" fill="' + v("--ink-2") + '">' + r.axis + "</text>";
+          }
+          if (r.monthly) {
+            s += '<text x="' + fGeom[i][0] + '" y="' + (fGeom[i][1] - 13) + '" text-anchor="middle" font-size="12.5" font-weight="800" fill="' + v("--accent") + '" style="pointer-events:none">' + r.value.toLocaleString("ja-JP") + "</text>";
           }
         });
         s += '<circle id="fHiRing" r="12" fill="none" stroke="' + v("--accent") + '" stroke-width="1.5" opacity="0.45" style="pointer-events:none"/>';
         s += '<circle id="fHi" r="7.5" fill="' + v("--accent") + '" stroke="' + v("--surface") + '" stroke-width="3" style="pointer-events:none"/>';
         rows.forEach(function (r, i) {
-          s += '<circle class="hit" data-idx="' + i + '" cx="' + fGeom[i][0] + '" cy="' + fGeom[i][1] + '" r="15" fill="rgba(0,0,0,0)"><title>' + jpDate(r[0]) + "：" + r[1].toLocaleString("ja-JP") + "人</title></circle>";
+          s += '<circle class="hit" data-idx="' + i + '" cx="' + fGeom[i][0] + '" cy="' + fGeom[i][1] + '" r="15" fill="rgba(0,0,0,0)"><title>' + r.label + "：" + r.value.toLocaleString("ja-JP") + "人</title></circle>";
         });
         s += "</svg>";
         document.getElementById("followerChart").innerHTML = s;
-        fScrub = { svg: document.querySelector("#followerChart svg"), vbW: FW, x0: FL, step: iw / (rows.length - 1), n: rows.length, band: false };
+        var step = rows.length === 1 ? iw : iw / (rows.length - 1);
+        fScrub = { svg: document.querySelector("#followerChart svg"), vbW: FW, x0: FL, step: step, n: rows.length, band: false };
       }
       function selectFollower(i) {
-        var rows = DATA.daily, r = rows[i];
+        var r = fRows[i];
+        if (!r) return;
         var guide = document.getElementById("fGuide"), hi = document.getElementById("fHi"), ring = document.getElementById("fHiRing");
         if (!guide || !hi) return;
         guide.setAttribute("x1", fGeom[i][0]); guide.setAttribute("x2", fGeom[i][0]);
@@ -458,18 +517,48 @@
           t.setAttribute("fill", on ? v("--accent") : v("--ink-2"));
         });
         var ro = document.getElementById("followerReadout");
-        if (ro) ro.innerHTML = '<span class="r-date">' + jpDate(r[0]) + '</span>' +
-          '<span class="r-main"><span class="r-label">フォロワー</span>' + r[1].toLocaleString("ja-JP") + '人</span>' +
-          '<span class="r-sub">前日比 ' + fmtDelta(r[2]) + ' ／ 投稿 ' + fmt(r[3]) + '件</span>';
+        if (!ro) return;
+        if (r.monthly) {
+          ro.innerHTML = '<span class="r-date">' + r.label + (r.current ? "（集計中）" : "") + '</span>' +
+            '<span class="r-main"><span class="r-label">月末のフォロワー</span>' + r.value.toLocaleString("ja-JP") + '人</span>' +
+            '<span class="r-sub">その月の増加 ' + fmtDelta(r.delta) + '人 ／ 記録 ' + r.days + '日分</span>';
+        } else {
+          ro.innerHTML = '<span class="r-date">' + jpDate(r.key) + '</span>' +
+            '<span class="r-main"><span class="r-label">フォロワー</span>' + r.value.toLocaleString("ja-JP") + '人</span>' +
+            '<span class="r-sub">前日比 ' + fmtDelta(r.delta) + ' ／ 投稿 ' + fmt(r.posts) + '件</span>';
+        }
+      }
+      function setFollowerMode(mode) {
+        fMode = mode;
+        var sec = document.getElementById("followerSection");
+        if (sec) {
+          var notes = sec.querySelectorAll(".note");
+          if (notes[0]) notes[0].hidden = mode !== "daily";
+        }
+        var mn = document.getElementById("followerNoteMonthly");
+        if (mn) mn.hidden = mode !== "monthly";
+        followerChart();
+        selectFollower(fRows.length - 1);
       }
 
-      /* ---------- 日別いいね（棒） ---------- */
+      /* ---------- いいね集計（棒・タイムスライサー付き） ---------- */
       var LW = 720, LH = 230, LL = 40, LR = 10, LT = 14, LB = 30;
-      var likesDays = 92, lGeom = [], lRows = [];
-      function likesChart(days) {
-        likesDays = days;
-        var all = DATA.dailyLikes; // [date, likes]
-        lRows = all.slice(all.length - days);
+      var lGeom = [], lRows = [];
+      var lGran = "day";
+      var lStart = Math.max(0, DATA.dailyLikes.length - 92), lEnd = DATA.dailyLikes.length - 1;
+      function likesViewRows() {
+        var slice = DATA.dailyLikes.slice(lStart, lEnd + 1);
+        if (lGran === "day") return slice;
+        var byMonth = {}, order = [];
+        slice.forEach(function (r) {
+          var m = r[0].slice(0, 7);
+          if (!(m in byMonth)) { byMonth[m] = 0; order.push(m); }
+          byMonth[m] += r[1];
+        });
+        return order.map(function (m) { return [m, byMonth[m]]; });
+      }
+      function likesChart() {
+        lRows = likesViewRows();
         var iw = LW - LL - LR, ih = LH - LT - LB;
         var max = 0;
         lRows.forEach(function (r) { if (r[1] > max) max = r[1]; });
@@ -479,7 +568,7 @@
           var h = (r[1] / max) * ih;
           return { cx: LL + i * bw + bw / 2, top: LT + ih - h, h: h, bw: bw };
         });
-        var s = '<svg viewBox="0 0 ' + LW + " " + LH + '" role="img" aria-label="日別のいいね数グラフ">';
+        var s = '<svg viewBox="0 0 ' + LW + " " + LH + '" role="img" aria-label="いいね数の集計グラフ">';
         for (var g = 0; g <= 4; g++) {
           var gv = (max * g) / 4, gy = LT + ih - (gv / max) * ih;
           s += '<line x1="' + LL + '" y1="' + gy + '" x2="' + (LW - LR) + '" y2="' + gy + '" stroke="' + v("--grid") + '" stroke-width="1" stroke-dasharray="3 4"/>';
@@ -490,23 +579,26 @@
         lRows.forEach(function (r, i) {
           var gm = lGeom[i];
           if (r[1] > 0) {
-            s += '<path class="lbar" data-idx="' + i + '" d="' + barPath(gm.cx - gm.bw * 0.34, gm.top, gm.bw * 0.68, gm.h, 2) + '" fill="' + v("--bar") + '"><title>' + jpDate(r[0]) + "：" + r[1] + "</title></path>";
+            s += '<path class="lbar" data-idx="' + i + '" d="' + barPath(gm.cx - gm.bw * 0.34, gm.top, gm.bw * 0.68, gm.h, 2) + '" fill="' + v("--bar") + '"><title>' + (lGran === "day" ? jpDate(r[0]) : jpMonth(r[0])) + "：" + r[1] + "</title></path>";
           }
         });
-        var step = days > 120 ? 30 : 15;
+        var n = lRows.length;
+        var step = lGran === "month" ? 1 : (n > 120 ? 30 : (n > 45 ? 15 : 7));
         lRows.forEach(function (r, i) {
-          if (i % step === 0 || i === lRows.length - 1) {
-            var label = days <= 120 || r[0].slice(0, 4) === "2026" ? r[0].slice(5).replace("-", "/") : r[0].slice(2, 4) + "/" + r[0].slice(5, 7);
+          if (i % step === 0 || i === n - 1) {
+            var label = lGran === "month" ? r[0].slice(2).replace("-", "/") : r[0].slice(5).replace("-", "/");
             s += '<text class="lxlab" data-idx="' + i + '" x="' + lGeom[i].cx + '" y="' + (LH - 8) + '" text-anchor="middle" font-size="11" fill="' + v("--ink-2") + '">' + label + "</text>";
           }
         });
         lRows.forEach(function (r, i) {
           var gm = lGeom[i];
-          s += '<rect class="hit" data-idx="' + i + '" x="' + (LL + i * gm.bw).toFixed(1) + '" y="' + LT + '" width="' + gm.bw.toFixed(1) + '" height="' + ih + '" fill="rgba(0,0,0,0)"><title>' + jpDate(r[0]) + "：" + r[1] + "</title></rect>";
+          s += '<rect class="hit" data-idx="' + i + '" x="' + (LL + i * gm.bw).toFixed(1) + '" y="' + LT + '" width="' + gm.bw.toFixed(1) + '" height="' + ih + '" fill="rgba(0,0,0,0)"><title>' + (lGran === "day" ? jpDate(r[0]) : jpMonth(r[0])) + "：" + r[1] + "</title></rect>";
         });
         s += "</svg>";
         document.getElementById("likesChart").innerHTML = s;
         lScrub = { svg: document.querySelector("#likesChart svg"), vbW: LW, x0: LL, step: bw, n: lRows.length, band: true };
+        slicerChart();
+        updateSliceLabel();
         var def = lRows.length - 1;
         for (var k = lRows.length - 1; k >= 0; k--) { if (lRows[k][1] > 0) { def = k; break; } }
         selectLikes(def);
@@ -525,10 +617,8 @@
         });
         var val = document.getElementById("lVal");
         if (val) {
-          if (r[1] > 0) {
-            val.setAttribute("x", gm.cx); val.setAttribute("y", Math.max(12, gm.top - 6));
-            val.textContent = r[1].toLocaleString("ja-JP");
-          } else { val.textContent = ""; }
+          if (r[1] > 0) { val.setAttribute("x", gm.cx); val.setAttribute("y", Math.max(12, gm.top - 6)); val.textContent = r[1].toLocaleString("ja-JP"); }
+          else { val.textContent = ""; }
         }
         var labs = document.querySelectorAll("#likesChart .lxlab");
         Array.prototype.forEach.call(labs, function (t) {
@@ -538,9 +628,97 @@
           t.setAttribute("fill", on ? v("--bar") : v("--ink-2"));
         });
         var ro = document.getElementById("likesReadout");
-        if (ro) ro.innerHTML = '<span class="r-date">' + jpDate(r[0]) + '</span>' +
-          '<span class="r-main"><span class="r-label">いいね</span>' + r[1].toLocaleString("ja-JP") + '</span>' +
-          (r[1] === 0 ? '<span class="r-sub">この日は投稿がありませんでした</span>' : '<span class="r-sub">その日に投稿された分の合計です</span>');
+        if (!ro) return;
+        if (lGran === "month") {
+          ro.innerHTML = '<span class="r-date">' + jpMonth(r[0]) + '</span>' +
+            '<span class="r-main"><span class="r-label">いいね</span>' + r[1].toLocaleString("ja-JP") + '</span>' +
+            '<span class="r-sub">その月に投稿された分の合計です</span>';
+        } else {
+          ro.innerHTML = '<span class="r-date">' + jpDate(r[0]) + '</span>' +
+            '<span class="r-main"><span class="r-label">いいね</span>' + r[1].toLocaleString("ja-JP") + '</span>' +
+            (r[1] === 0 ? '<span class="r-sub">この日は投稿がありませんでした</span>' : '<span class="r-sub">その日に投稿された分の合計です</span>');
+        }
+      }
+      /* タイムスライサー：全期間の帯の上で、窓（期間）を引っ張って絞る */
+      var SW = 720, SH = 46, SL = 40, SR = 10;
+      function slicerChart() {
+        var all = DATA.dailyLikes;
+        var iw = SW - SL - SR, ih = SH - 10;
+        var max = 0;
+        all.forEach(function (r) { if (r[1] > max) max = r[1]; });
+        max = Math.max(10, max);
+        var bw = iw / all.length;
+        var s = '<svg viewBox="0 0 ' + SW + " " + SH + '" role="img" aria-label="期間を選ぶタイムスライサー">';
+        all.forEach(function (r, i) {
+          var h = Math.max(1, (r[1] / max) * ih);
+          var inWin = i >= lStart && i <= lEnd;
+          s += '<rect x="' + (SL + i * bw).toFixed(1) + '" y="' + (5 + ih - h).toFixed(1) + '" width="' + Math.max(0.6, bw * 0.8).toFixed(1) + '" height="' + h.toFixed(1) + '" fill="' + v("--bar") + '" opacity="' + (inWin ? "0.95" : "0.16") + '"/>';
+        });
+        var x1 = SL + lStart * bw, x2 = SL + (lEnd + 1) * bw;
+        s += '<rect x="' + x1.toFixed(1) + '" y="1.5" width="' + (x2 - x1).toFixed(1) + '" height="' + (SH - 3) + '" fill="none" stroke="' + v("--accent") + '" stroke-width="2" rx="5"/>';
+        s += '<rect x="' + (x1 - 3.5).toFixed(1) + '" y="1.5" width="7" height="' + (SH - 3) + '" fill="' + v("--accent") + '" rx="3.5"/>';
+        s += '<rect x="' + (x2 - 3.5).toFixed(1) + '" y="1.5" width="7" height="' + (SH - 3) + '" fill="' + v("--accent") + '" rx="3.5"/>';
+        s += "</svg>";
+        document.getElementById("slicerChart").innerHTML = s;
+      }
+      function updateSliceLabel() {
+        var el = document.getElementById("sliceLabel");
+        if (!el) return;
+        var a = DATA.dailyLikes[lStart], b = DATA.dailyLikes[lEnd];
+        el.innerHTML = "選んでいる期間：<strong>" + jpDate(a[0]) + " 〜 " + jpDate(b[0]) + "</strong>（" + (lEnd - lStart + 1) + "日分）";
+      }
+      function markSlicePresets(activeId) {
+        ["btnSlice3m", "btnSlice6m", "btnSliceAll"].forEach(function (id) {
+          var b = document.getElementById(id);
+          if (b) b.setAttribute("aria-pressed", id === activeId ? "true" : "false");
+        });
+      }
+      function setSlicePreset(days, id) {
+        var n = DATA.dailyLikes.length;
+        lEnd = n - 1;
+        lStart = days === 0 ? 0 : Math.max(0, n - days);
+        markSlicePresets(id);
+        likesChart();
+      }
+      function attachSlicer() {
+        var wrap = document.getElementById("slicerWrap");
+        if (!wrap) return;
+        var mode = null, grabOff = 0, winLen = 0;
+        function idxFromEvent(e) {
+          var svg = document.querySelector("#slicerChart svg");
+          if (!svg) return 0;
+          var rect = svg.getBoundingClientRect();
+          var sx = ((e.clientX - rect.left) / rect.width) * SW;
+          var bw = (SW - SL - SR) / DATA.dailyLikes.length;
+          var i = Math.floor((sx - SL) / bw);
+          return Math.max(0, Math.min(DATA.dailyLikes.length - 1, i));
+        }
+        function apply(e) {
+          var n = DATA.dailyLikes.length, i = idxFromEvent(e);
+          if (mode === "start") { lStart = Math.max(0, Math.min(i, lEnd - 6)); }
+          else if (mode === "end") { lEnd = Math.min(n - 1, Math.max(i, lStart + 6)); }
+          else if (mode === "move") {
+            var ns = Math.max(0, Math.min(i - grabOff, n - 1 - winLen));
+            lStart = ns; lEnd = ns + winLen;
+          } else { return; }
+          markSlicePresets(null);
+          likesChart();
+        }
+        wrap.addEventListener("pointerdown", function (e) {
+          var i = idxFromEvent(e);
+          winLen = lEnd - lStart;
+          var edge = Math.max(2, winLen * 0.25);
+          if (i <= lStart + edge && Math.abs(i - lStart) <= Math.abs(i - lEnd)) mode = "start";
+          else if (i >= lEnd - edge) mode = "end";
+          else { mode = "move"; grabOff = i - lStart; }
+          if (wrap.setPointerCapture) { try { wrap.setPointerCapture(e.pointerId); } catch (err) {} }
+          apply(e);
+          e.preventDefault();
+        });
+        wrap.addEventListener("pointermove", function (e) { if (mode) apply(e); });
+        function endDrag() { mode = null; }
+        wrap.addEventListener("pointerup", endDrag);
+        wrap.addEventListener("pointercancel", endDrag);
       }
 
       /* ---------- 月別（組み合わせ：棒＝いいね合計・左軸、折れ線＝1投稿あたり平均・右軸） ---------- */
@@ -634,6 +812,88 @@
           '<span class="r-sub">投稿 ' + r[1] + '件 ／ 1投稿あたり平均 ' + r[3].toFixed(1) + '</span>';
       }
 
+      /* ---------- 曜日別のフォロワー増加（棒） ---------- */
+      var WW = 720, WH = 230, WL = 40, WR = 10, WT = 14, WB = 30;
+      var wGeom = [], wRows = [];
+      var WD_LABEL = ["月", "火", "水", "木", "金", "土", "日"];
+      function weekdayChart() {
+        var agg = WD_LABEL.map(function () { return { sum: 0, days: 0 }; });
+        DATA.daily.forEach(function (r) {
+          if (r[2] == null) return;
+          var p = r[0].split("-");
+          var dow = new Date(Date.UTC(parseInt(p[0], 10), parseInt(p[1], 10) - 1, parseInt(p[2], 10))).getUTCDay();
+          var idx = (dow + 6) % 7;
+          agg[idx].sum += r[2];
+          agg[idx].days += 1;
+        });
+        wRows = agg.map(function (a, i) {
+          return { label: WD_LABEL[i] + "曜", sum: a.sum, days: a.days, avg: a.days ? a.sum / a.days : 0 };
+        });
+        var iw = WW - WL - WR, ih = WH - WT - WB;
+        var max = 0;
+        wRows.forEach(function (r) { if (r.sum > max) max = r.sum; });
+        max = Math.max(5, Math.ceil(max * 1.15));
+        var bw = iw / wRows.length;
+        wGeom = wRows.map(function (r, i) {
+          var h = (r.sum / max) * ih;
+          return { cx: WL + i * bw + bw / 2, top: WT + ih - h, h: h, bw: bw };
+        });
+        var s = '<svg viewBox="0 0 ' + WW + " " + WH + '" role="img" aria-label="曜日別のフォロワー増加グラフ">';
+        for (var g = 0; g <= 4; g++) {
+          var gv = (max * g) / 4, gy = WT + ih - (gv / max) * ih;
+          s += '<line x1="' + WL + '" y1="' + gy + '" x2="' + (WW - WR) + '" y2="' + gy + '" stroke="' + v("--grid") + '" stroke-width="1" stroke-dasharray="3 4"/>';
+          s += '<text x="' + (WL - 6) + '" y="' + (gy + 4) + '" text-anchor="end" font-size="11" fill="' + v("--ink-2") + '">' + Math.round(gv) + "</text>";
+        }
+        s += '<line id="wGuide" x1="0" y1="' + WT + '" x2="0" y2="' + (WT + ih) + '" stroke="' + v("--bar") + '" stroke-width="2" opacity="0.9"/>';
+        s += '<text id="wVal" text-anchor="middle" font-size="13" font-weight="800" fill="' + v("--bar") + '" style="pointer-events:none"></text>';
+        wRows.forEach(function (r, i) {
+          var gm = wGeom[i];
+          if (r.sum > 0) {
+            s += '<path class="wbar" data-idx="' + i + '" d="' + barPath(gm.cx - gm.bw * 0.3, gm.top, gm.bw * 0.6, gm.h, 4) + '" fill="' + v("--bar") + '"><title>' + r.label + "：+" + r.sum + "人</title></path>";
+          }
+          s += '<text class="wxlab" data-idx="' + i + '" x="' + gm.cx + '" y="' + (WH - 8) + '" text-anchor="middle" font-size="12" fill="' + v("--ink-2") + '">' + r.label + "</text>";
+        });
+        wRows.forEach(function (r, i) {
+          var gm = wGeom[i];
+          s += '<rect class="hit" data-idx="' + i + '" x="' + (WL + i * gm.bw).toFixed(1) + '" y="' + WT + '" width="' + gm.bw.toFixed(1) + '" height="' + ih + '" fill="rgba(0,0,0,0)"><title>' + r.label + "：+" + r.sum + "人</title></rect>";
+        });
+        s += "</svg>";
+        document.getElementById("weekdayChart").innerHTML = s;
+        wScrub = { svg: document.querySelector("#weekdayChart svg"), vbW: WW, x0: WL, step: bw, n: wRows.length, band: true };
+        var best = 0;
+        wRows.forEach(function (r, i) { if (r.sum > wRows[best].sum) best = i; });
+        selectWeekday(best);
+      }
+      function selectWeekday(i) {
+        var r = wRows[i], gm = wGeom[i];
+        if (!r || !gm) return;
+        var guide = document.getElementById("wGuide");
+        if (guide) { guide.setAttribute("x1", gm.cx); guide.setAttribute("x2", gm.cx); }
+        var bars = document.querySelectorAll("#weekdayChart .wbar");
+        Array.prototype.forEach.call(bars, function (b) {
+          var on = parseInt(b.getAttribute("data-idx"), 10) === i;
+          b.setAttribute("fill-opacity", on ? "1" : "0.22");
+          if (on) { b.setAttribute("stroke", v("--ink")); b.setAttribute("stroke-width", "1.6"); }
+          else { b.removeAttribute("stroke"); b.removeAttribute("stroke-width"); }
+        });
+        var val = document.getElementById("wVal");
+        if (val) {
+          if (r.sum > 0) { val.setAttribute("x", gm.cx); val.setAttribute("y", Math.max(12, gm.top - 6)); val.textContent = "+" + r.sum; }
+          else { val.textContent = ""; }
+        }
+        var labs = document.querySelectorAll("#weekdayChart .wxlab");
+        Array.prototype.forEach.call(labs, function (t) {
+          var on = parseInt(t.getAttribute("data-idx"), 10) === i;
+          t.setAttribute("font-weight", on ? "800" : "400");
+          t.setAttribute("font-size", on ? "14" : "12");
+          t.setAttribute("fill", on ? v("--bar") : v("--ink-2"));
+        });
+        var ro = document.getElementById("weekdayReadout");
+        if (ro) ro.innerHTML = '<span class="r-date">' + r.label + '</span>' +
+          '<span class="r-main"><span class="r-label">増えた人数の合計</span>' + fmtDelta(r.sum) + '人</span>' +
+          '<span class="r-sub">1日平均 ' + (r.days ? "+" + (Math.round(r.avg * 10) / 10) : "—") + '人 ／ 記録 ' + r.days + '日分</span>';
+      }
+
       /* ---------- 表 ---------- */
       function buildTables() {
         var db = document.getElementById("dailyBody");
@@ -666,9 +926,16 @@
         });
       }
       wireToggle(
-        document.getElementById("btnLikes3m"), document.getElementById("btnLikes1y"),
-        function () { likesChart(92); }, function () { likesChart(365); }
+        document.getElementById("btnFolDaily"), document.getElementById("btnFolMonthly"),
+        function () { setFollowerMode("daily"); }, function () { setFollowerMode("monthly"); }
       );
+      wireToggle(
+        document.getElementById("btnGranDay"), document.getElementById("btnGranMonth"),
+        function () { lGran = "day"; likesChart(); }, function () { lGran = "month"; likesChart(); }
+      );
+      document.getElementById("btnSlice3m").addEventListener("click", function () { setSlicePreset(92, "btnSlice3m"); });
+      document.getElementById("btnSlice6m").addEventListener("click", function () { setSlicePreset(183, "btnSlice6m"); });
+      document.getElementById("btnSliceAll").addEventListener("click", function () { setSlicePreset(0, "btnSliceAll"); });
       wireToggle(
         document.getElementById("btnRecDaily"), document.getElementById("btnRecMonthly"),
         function () {
@@ -696,7 +963,8 @@
       function drawAll() {
         css = getComputedStyle(document.documentElement);
         followerChart();
-        likesChart(likesDays);
+        likesChart();
+        weekdayChart();
         monthlyChart();
         selectFollower(DATA.daily.length - 1);
         selectMonthly(DATA.monthly12.length - 1);
@@ -706,6 +974,8 @@
       attachScrub(document.getElementById("followerWrap"), function () { return fScrub; }, selectFollower);
       attachScrub(document.getElementById("likesWrap"), function () { return lScrub; }, selectLikes);
       attachScrub(document.getElementById("monthlyWrap"), function () { return mScrub; }, selectMonthly);
+      attachScrub(document.getElementById("weekdayWrap"), function () { return wScrub; }, selectWeekday);
+      attachSlicer();
       buildTables();
       buildRecent();
       /* 初期表示でも数字カードが見えるよう、レイアウト確定後に再配置 */
